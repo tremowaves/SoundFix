@@ -1,129 +1,130 @@
-# SoundFix - Bộ xử lý âm thanh tự động cho Game
+# SoundFix - Automatic Audio Processor for Game Sound Effects
 
-## 📖 Mô tả
-SoundFix là ứng dụng desktop tự động xử lý âm thanh cho game sound effects. Ứng dụng sử dụng AI để nhận diện loại âm thanh dựa trên tên file và áp dụng các preset EQ phù hợp.
+## 📖 Description
+SoundFix is a desktop application that automatically processes audio files for game sound effects. The app uses AI to detect the type of sound based on the filename and applies the appropriate EQ preset.
 
-## ✨ Tính năng chính
-- 🎯 **Tự động nhận diện loại âm thanh** dựa trên tên file
-- 🎛️ **7 preset EQ chuyên nghiệp** cho từng loại âm thanh
-- 🔊 **Xử lý âm thanh nâng cao** với bandpass filter
-- 📦 **Xuất file ZIP** tự động với timestamp
-- 🖥️ **Giao diện desktop** dễ sử dụng với Tkinter
-- 📊 **Thống kê chi tiết** quá trình xử lý
+## ✨ Main Features
+- 🎯 **Automatic sound type detection** based on filename keywords
+- 🎛️ **7 professional EQ presets** for different sound categories
+- 🔊 **Advanced audio processing** with brickwall bandpass filter (FFT/STFT)
+- 📦 **Automatic ZIP export** with timestamp
+- 🖥️ **User-friendly desktop interface** (Tkinter)
+- 📊 **Detailed processing log and statistics**
 
-## 🎵 Các preset âm thanh
+## 🎵 Preset Table
 
-| Loại âm thanh | Tần số thấp | Tần số cao | Âm lượng | Mô tả |
-|---------------|-------------|------------|----------|-------|
-| **UI SFX** | 200 Hz | 6000 Hz | 0 dB | Tối ưu cho âm thanh giao diện |
-| **Footstep** | 100 Hz | 5000 Hz | -2 dB | Giảm bass và treble cho bước chân |
-| **Attack/Impact** | 150 Hz | 7000 Hz | -2 dB | Tập trung vào âm thanh va chạm |
-| **Voice/Dialog** | 150 Hz | 8000 Hz | 0 dB | Tối ưu cho giọng nói |
-| **Ambient** | 80 Hz | 8000 Hz | -8 dB | Âm thanh môi trường |
-| **Environment Tone** | 60 Hz | 6000 Hz | -14 dB | Âm thanh môi trường nhẹ |
-| **Music Background** | 100 Hz | 12000 Hz | -8 dB | Nhạc nền |
+| Sound Type         | Lowcut | Highcut | Volume | Description                      |
+|--------------------|--------|---------|--------|----------------------------------|
+| **UI SFX**         | 200 Hz | 6000 Hz | 0 dB   | Optimized for UI sounds          |
+| **Footstep**       | 100 Hz | 5000 Hz | -2 dB  | Reduces bass/treble for steps    |
+| **Attack/Impact**  | 150 Hz | 7000 Hz | -2 dB  | Focused on impact sounds         |
+| **Voice/Dialog**   | 150 Hz | 8000 Hz | 0 dB   | Optimized for voice/dialogue     |
+| **Ambient**        | 80 Hz  | 8000 Hz | -8 dB  | For environmental/ambient sounds |
+| **Environment Tone** | 60 Hz | 6000 Hz | -14 dB | Subtle environmental tones       |
+| **Music Background** | 100 Hz | 12000 Hz | -8 dB | Background music                 |
 
-## 🚀 Cài đặt
+## 🚀 Installation
 
-### Yêu cầu hệ thống
+### System Requirements
 - Python 3.8+
-- FFmpeg (đã cài đặt)
+- FFmpeg (installed and in PATH)
 - Windows 10/11
 
-### Cài đặt dependencies
+### Install dependencies
 ```bash
-pip install numpy scipy librosa soundfile tkinter
+pip install -r requirements.txt
 ```
 
-### Cài đặt FFmpeg
-1. Tải FFmpeg từ: https://ffmpeg.org/download.html
-2. Thêm FFmpeg vào PATH của Windows
-3. Kiểm tra cài đặt: `ffmpeg -version`
+### FFmpeg Installation
+1. Download FFmpeg: https://ffmpeg.org/download.html
+2. Add FFmpeg to your Windows PATH
+3. Check installation: `ffmpeg -version`
 
-## 📁 Cấu trúc thư mục
+## 📁 Project Structure
 ```
 Sound Fix/
-├── soundfix_desktop.py    # Ứng dụng chính
-├── test_filter.py         # Script test filter
-├── README.md             # Hướng dẫn này
-└── requirements.txt      # Dependencies
+├── soundfix_desktop.py    # Main application
+├── test_filter.py         # Filter test script
+├── README.md              # This guide
+└── requirements.txt       # Dependencies
 ```
 
-## 🎮 Cách sử dụng
+## 🎮 Usage
 
-### 1. Chạy ứng dụng
+### 1. Run the application
 ```bash
 python soundfix_desktop.py
 ```
 
-### 2. Chọn folder âm thanh gốc
-- Click "Chọn..." để chọn thư mục chứa file âm thanh
-- Hỗ trợ: WAV, MP3, FLAC, OGG, M4A, AAC
+### 2. Select the source audio folder
+- Click "Browse..." to select the folder containing your audio files
+- Supported formats: WAV, MP3, FLAC, OGG, M4A, AAC
 
-### 3. Chọn thư mục đích
-- Click "Chọn..." để chọn nơi lưu file ZIP kết quả
+### 3. Select the output folder
+- Click "Browse..." to select where the ZIP file will be saved
 
-### 4. Xử lý và xuất ZIP
-- Click "Xử lý và xuất ZIP" để bắt đầu
-- Theo dõi tiến trình trong log
-- File ZIP sẽ được tạo tự động với timestamp
+### 4. Process and export ZIP
+- Click "Process and Export ZIP" to start
+- Monitor progress in the log
+- The ZIP file will be created automatically with a timestamp
 
-## 🎯 Quy tắc đặt tên file
+## 🎯 Filename Keyword Rules
 
-Ứng dụng tự động nhận diện loại âm thanh dựa trên từ khóa trong tên file:
+The app automatically detects sound type based on keywords in the filename:
 
-### Từ khóa được hỗ trợ:
-- **Footstep**: `footstep`, `step`
-- **Attack/Impact**: `impact`, `attack`, `hit`
-- **UI SFX**: `ui_click`, `ui_sfx`, `ui`, `click`
-- **Voice/Dialog**: `voice`, `dialog`, `speech`
-- **Ambient**: `ambient`, `rain`, `water`, `drip`, `wind`, `air`
-- **Environment Tone**: `env`, `environment`, `rattle`, `window`, `door`, `creak`
-- **Music Background**: `music`
+| Sound Type         | Keywords (case-insensitive)                |
+|--------------------|--------------------------------------------|
+| Footstep           | footstep, step                             |
+| Attack/Impact      | impact, attack, hit                        |
+| UI SFX             | ui_click, ui_sfx, ui, click                |
+| Voice/Dialog       | voice, dialog, speech                      |
+| Ambient            | ambient, rain, water, drip, wind, air      |
+| Environment Tone   | env, environment, rattle, window, door, creak |
+| Music Background   | music                                      |
 
-### Ví dụ tên file:
+**Example filenames:**
 ```
-✅ Ambient_Rain_Night_var7_(No Noise).wav    → Ambient preset
-✅ Window_Rattle_var9_(No Noise).wav         → Environment Tone preset
-✅ Player_Footstep_Wood_01.wav               → Footstep preset
-✅ UI_Click_Button_01.wav                    → UI SFX preset
-❌ Unknown_Sound_01.wav                      → Không nhận diện được
+Ambient_Rain_Night_var7_(No Noise).wav    → Ambient preset
+Window_Rattle_var9_(No Noise).wav         → Environment Tone preset
+Player_Footstep_Wood_01.wav               → Footstep preset
+UI_Click_Button_01.wav                    → UI SFX preset
+Unknown_Sound_01.wav                      → Not recognized
 ```
 
-## 🔧 Tùy chỉnh
+## 🔧 Customization
 
-### Thêm preset mới
-Chỉnh sửa `PRESETS` trong `soundfix_desktop.py`:
+### Add a new preset
+Edit the `PRESETS` dictionary in `soundfix_desktop.py`:
 ```python
 PRESETS = {
-    'Tên Preset': {'lowcut': 100, 'highcut': 8000, 'volume': -2},
-    # Thêm preset mới ở đây
+    'New Preset': {'lowcut': 100, 'highcut': 8000, 'volume': -2},
+    # Add more presets here
 }
 ```
 
-### Thêm từ khóa nhận diện
-Chỉnh sửa hàm `get_category()` trong `soundfix_desktop.py`:
+### Add new detection keywords
+Edit the `get_category()` function in `soundfix_desktop.py`:
 ```python
-elif "từ_khóa_mới" in fname:
-    return 'Tên Preset'
+elif "new_keyword" in fname:
+    return 'New Preset'
 ```
 
-## 🧪 Test và Debug
+## 🧪 Testing & Debugging
 
-### Chạy test filter
+### Run the filter test script
 ```bash
 python test_filter.py
 ```
-Script này sẽ:
-- Tạo tín hiệu test với nhiều tần số
-- Áp dụng filter bandpass
-- Hiển thị đồ thị đáp ứng tần số
-- Tạo file test để nghe thử
+This script will:
+- Generate a test signal with multiple frequencies
+- Apply the brickwall bandpass filter
+- Show filter response plots
+- Save test audio files for listening
 
 ### Debug logging
-Ứng dụng hiển thị thông tin chi tiết trong console:
+The app prints detailed info in the console:
 ```
-🎵 Xử lý file.wav với preset Ambient:
+🎵 Processing file.wav with preset Ambient:
    - Lowcut: 80Hz
    - Highcut: 8000Hz
    - Volume: -8dB
@@ -131,23 +132,23 @@ Script này sẽ:
    - Channels: 2
 ```
 
-## 📊 Thống kê kết quả
-Sau khi xử lý, ứng dụng hiển thị:
-- ✅ Số file thành công
-- ❌ Số file lỗi
-- 📦 Đường dẫn file ZIP
+## 📊 Processing Statistics
+After processing, the app shows:
+- ✅ Number of successful files
+- ❌ Number of errors
+- 📦 ZIP file path
 
-## 🐛 Xử lý lỗi thường gặp
+## 🐛 Troubleshooting
 
-### Lỗi "Format not recognised"
-- Kiểm tra file âm thanh có bị hỏng không
-- Thử chuyển đổi sang WAV bằng FFmpeg
+### "Format not recognised" error
+- Check if the audio file is corrupted
+- Try converting to WAV using FFmpeg
 
-### Lỗi "Không xác định loại âm thanh"
-- Đổi tên file theo quy tắc đặt tên
-- Thêm từ khóa vào hàm `get_category()`
+### "Sound type not recognized" error
+- Rename the file according to the keyword rules
+- Add new keywords in `get_category()`
 
-### Lỗi thiếu dependencies
+### Missing dependencies
 ```bash
 pip install -r requirements.txt
 ```
@@ -155,28 +156,28 @@ pip install -r requirements.txt
 ## 📝 Changelog
 
 ### Version 1.1
-- ✅ Cải thiện nhận diện preset
-- ✅ Thêm debug logging
-- ✅ Cải thiện error handling
-- ✅ Thêm thống kê chi tiết
+- Improved preset detection
+- Added debug logging
+- Enhanced error handling
+- Added detailed statistics
 
 ### Version 1.0
-- ✅ Ứng dụng desktop với Tkinter
-- ✅ 7 preset EQ chuyên nghiệp
-- ✅ Xuất file ZIP tự động
+- Desktop app with Tkinter
+- 7 professional EQ presets
+- Automatic ZIP export
 
-## 🤝 Đóng góp
-1. Fork repository
-2. Tạo feature branch
-3. Commit changes
-4. Push to branch
-5. Tạo Pull Request
+## 🤝 Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to your branch
+5. Create a Pull Request
 
 ## 📄 License
-MIT License - Xem file LICENSE để biết thêm chi tiết
+MIT License - See LICENSE for details
 
-## 📞 Hỗ trợ
-Nếu gặp vấn đề, vui lòng tạo issue trên GitHub hoặc liên hệ qua email.
+## 📞 Support
+If you have issues, please open an issue on GitHub or contact via email.
 
 ---
-**SoundFix** - Làm cho âm thanh game trở nên chuyên nghiệp hơn! 🎮🎵 
+**SoundFix** - Make your game audio more professional! 🎮🎵 
