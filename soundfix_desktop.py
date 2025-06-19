@@ -50,31 +50,31 @@ PRESETS = {
     'Music Background': {'lowcut': 100, 'highcut': 12000, 'volume': -8}  # Giữ mid-range
 }
 
-def butter_filter(data, sr, lowcut, highcut):
-    """
-    Áp dụng bandpass filter với Butterworth
-    """
-    # Đảm bảo tần số cắt hợp lệ
-    nyq = 0.5 * sr
-    low = lowcut / nyq
-    high = highcut / nyq
-    
-    # Kiểm tra tần số cắt có hợp lệ không
-    if low >= 1.0 or high >= 1.0:
-        print(f"Warning: Tần số cắt quá cao! low={lowcut}Hz, high={highcut}Hz, nyq={nyq}Hz")
-        return data
-    
-    if low >= high:
-        print(f"Warning: Tần số thấp >= tần số cao! low={lowcut}Hz, high={highcut}Hz")
-        return data
-    
-    # Tạo filter với order cao hơn để có hiệu ứng rõ ràng hơn
-    b, a = butter(4, [low, high], btype='band')
-    
-    # Áp dụng filter
-    filtered_data = lfilter(b, a, data)
-    
-    return filtered_data
+def stft_brickwall_filter(data, sr, lowcut, highcut, frame_size=2048, hop_size=1024):
+    # Nếu stereo, xử lý từng kênh
+    if len(data.shape) > 1:
+        filtered = np.zeros_like(data)
+        for ch in range(data.shape[0]):
+            filtered[ch] = stft_brickwall_filter(data[ch], sr, lowcut, highcut, frame_size, hop_size)
+        return filtered
+    # Mono
+    N = len(data)
+    window = np.hanning(frame_size)
+    result = np.zeros(N)
+    norm = np.zeros(N)
+    for start in range(0, N - frame_size, hop_size):
+        frame = data[start:start+frame_size] * window
+        spectrum = np.fft.fft(frame)
+        freqs = np.fft.fftfreq(frame_size, 1/sr)
+        mask = (np.abs(freqs) >= lowcut) & (np.abs(freqs) <= highcut)
+        spectrum[~mask] = 0
+        filtered_frame = np.fft.ifft(spectrum).real * window
+        result[start:start+frame_size] += filtered_frame
+        norm[start:start+frame_size] += window**2
+    # Tránh chia cho 0
+    norm[norm == 0] = 1
+    result /= norm
+    return result
 
 def process_audio_file(audio_path, output_dir):
     file_name = os.path.basename(audio_path)
@@ -112,11 +112,11 @@ def process_audio_file(audio_path, output_dir):
         if len(y.shape) > 1:
             y_processed = np.zeros_like(y)
             for channel in range(y.shape[0]):
-                y_eq = butter_filter(y[channel], sr, preset['lowcut'], preset['highcut'])
+                y_eq = stft_brickwall_filter(y[channel], sr, preset['lowcut'], preset['highcut'])
                 gain = 10 ** (preset['volume'] / 20)
                 y_processed[channel] = y_eq * gain
         else:
-            y_eq = butter_filter(y, sr, preset['lowcut'], preset['highcut'])
+            y_eq = stft_brickwall_filter(y, sr, preset['lowcut'], preset['highcut'])
             gain = 10 ** (preset['volume'] / 20)
             y_processed = y_eq * gain
         
