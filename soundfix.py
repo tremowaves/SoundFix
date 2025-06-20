@@ -1,346 +1,306 @@
 import os
-import gradio as gr
+import shutil
+import threading
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
 import numpy as np
 import librosa
 import soundfile as sf
-from scipy.signal import butter, lfilter
-import zipfile
-import tempfile
-import shutil
+from scipy.signal import butter, sosfilt
 from pathlib import Path
-import glob
-from pydub import AudioSegment
+import datetime
+import csv
 
-# Định nghĩa preset cho từng loại âm thanh
-PRESETS = {
-    'UI SFX':     {'lowcut': 100, 'highcut': 8000,  'volume': 0},
-    'Footstep':   {'lowcut': 60,  'highcut': 7000,  'volume': -2},
-    'Attack/Impact': {'lowcut': 80,  'highcut': 9000,  'volume': -2},
-    'Voice/Dialog':  {'lowcut': 80,  'highcut': 12000, 'volume': 0},
-    'Ambient':    {'lowcut': 60,  'highcut': 10000, 'volume': -8},
-    'Environment Tone': {'lowcut': 50,  'highcut': 10000, 'volume': -14},
-    'Music Background': {'lowcut': 40,  'highcut': 16000, 'volume': -8}
-}
+# Cố gắng nhập thư viện tkinterdnd2 để có chức năng kéo-thả
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    DND_SUPPORT = True
+except ImportError:
+    DND_SUPPORT = False
 
-def get_category(file_name):
-    fname = file_name.lower()
-    if fname.startswith('footstep'):
-        return 'Footstep'
-    elif fname.startswith('impact') or fname.startswith('attack'):
-        return 'Attack/Impact'
-    elif fname.startswith('ui_click') or fname.startswith('ui_sfx'):
-        return 'UI SFX'
-    elif fname.startswith('voice') or fname.startswith('dialog'):
-        return 'Voice/Dialog'
-    elif fname.startswith('ambient'):
-        return 'Ambient'
-    elif fname.startswith('env'):
-        return 'Environment Tone'
-    elif fname.startswith('music'):
-        return 'Music Background'
-    else:
-        return None
+# ==============================================================================
+# LOGIC ĐỌC CẤU HÌNH VÀ XỬ LÝ ÂM THANH (KHÔNG THAY ĐỔI)
+# ==============================================================================
+def load_presets_from_csv(csv_path):
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"Không tìm thấy file cấu hình: {csv_path}")
+    presets = []
+    with open(csv_path, mode='r', encoding='utf-8') as infile:
+        reader = csv.DictReader(infile)
+        for row in reader:
+            try:
+                row['priority'] = int(row['priority'])
+                row['keywords'] = [k.strip().lower() for k in row['keywords'].split(',')]
+                row['lowcut'] = int(row['lowcut'])
+                row['highcut'] = int(row['highcut'])
+                row['volume'] = float(row['volume'])
+                row['attenuation_db'] = float(row['attenuation_db'])
+                row['gate_threshold_db'] = float(row['gate_threshold_db'])
+                row['expansion_ratio'] = float(row['expansion_ratio'])
+                presets.append(row)
+            except (ValueError, KeyError) as e:
+                raise ValueError(f"Dữ liệu lỗi trong file CSV ở hàng: {row}. Lỗi: {e}")
+    presets.sort(key=lambda x: x['priority'])
+    return presets
 
-def butter_filter(data, sr, lowcut, highcut):
+def get_preset_for_file(filename, presets):
+    fn_lower = filename.lower()
+    for preset in presets:
+        for keyword in preset['keywords']:
+            if keyword in fn_lower:
+                return preset
+    return None
+
+def butter_filter(data, lowcut, highcut, sr, order=20, btype='band'):
     nyq = 0.5 * sr
-    low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(2, [low, high], btype='band')
-    return lfilter(b, a, data)
+    low = max(0.01, lowcut / nyq)
+    high = min(0.99, highcut / nyq)
+    sos = butter(order, [low, high], analog=False, btype=btype, output='sos')
+    if data.ndim > 1:
+        filtered = np.zeros_like(data)
+        for ch in range(data.shape[0]): filtered[ch] = sosfilt(sos, data[ch])
+        return filtered
+    else:
+        return sosfilt(sos, data)
 
-def process_audio_file(audio_path, output_dir):
+def hybrid_brickwall_filter(data, sr, **preset):
+    y_pass = butter_filter(data, preset['lowcut'], preset['highcut'], sr, order=24, btype='band')
+    y_stop = data - y_pass
+    reduction_gain = 10 ** (preset['attenuation_db'] / 20.0)
+    y_stop_attenuated = y_stop * reduction_gain
+    return y_pass + y_stop_attenuated
+
+def dynamic_hybrid_filter(data, sr, **preset):
+    y_pass = butter_filter(data, preset['lowcut'], preset['highcut'], sr, order=32, btype='band')
+    y_stop = data - y_pass
+    threshold_linear = 10 ** (preset['gate_threshold_db'] / 20.0)
+    frame_size, hop_size = 512, 256
+    
+    if data.ndim > 1:
+        y_stop_gated = np.zeros_like(y_stop)
+        for ch in range(data.shape[0]):
+            rms = librosa.feature.rms(y=y_stop[ch], frame_length=frame_size, hop_length=hop_size)[0]
+            gain_envelope = np.ones_like(rms)
+            gain_envelope[rms < threshold_linear] = preset['expansion_ratio']
+            smooth_gain = np.repeat(gain_envelope, hop_size)
+            proc_len = min(y_stop_gated.shape[1], len(smooth_gain))
+            y_stop_gated[ch, :proc_len] = y_stop[ch, :proc_len] * smooth_gain[:proc_len]
+    else:
+        y_stop_gated = np.zeros_like(y_stop)
+        rms = librosa.feature.rms(y=y_stop, frame_length=frame_size, hop_length=hop_size)[0]
+        gain_envelope = np.ones_like(rms)
+        gain_envelope[rms < threshold_linear] = preset['expansion_ratio']
+        smooth_gain = np.repeat(gain_envelope, hop_size)
+        proc_len = min(len(y_stop_gated), len(smooth_gain))
+        y_stop_gated[:proc_len] = y_stop[:proc_len] * smooth_gain[:proc_len]
+
+    reduction_gain = 10 ** (preset['attenuation_db'] / 20.0)
+    y_stop_final = y_stop_gated * reduction_gain
+    final_len = min(y_pass.shape[-1], y_stop_final.shape[-1])
+    return y_pass[..., :final_len] + y_stop_final[..., :final_len]
+
+def process_audio_file(audio_path, output_dir, algorithm, preset):
     file_name = os.path.basename(audio_path)
-    category = get_category(file_name)
-    if category is None:
-        return f"❌ Không xác định loại âm thanh cho file: {file_name}"
+    if preset is None:
+        return f"🟡 Bỏ qua file: {file_name} (Không khớp quy tắc)"
+    
     try:
-        preset = PRESETS[category]
-        audio = AudioSegment.from_file(audio_path)
-        # Điều chỉnh volume (dB)
-        audio = audio + preset['volume']
-        # Lưu file
-        name, ext = os.path.splitext(file_name)
-        output_name = f"processed_{name}.wav"
+        print(f"🎵 Xử lý {file_name} với quy tắc '{preset['category_name']}' bằng Engine '{algorithm}'")
+        y, sr = librosa.load(audio_path, sr=None, mono=False)
+        if y.ndim == 1: y = y[np.newaxis, :]
+        
+        if algorithm == "Butterworth Filter":
+            y_eq = butter_filter(y, preset['lowcut'], preset['highcut'], sr, order=20, btype='band')
+        else:
+            engine = dynamic_hybrid_filter if algorithm == "Dynamic Hybrid Brickwall" else hybrid_brickwall_filter
+            y_eq = engine(y, sr=sr, **preset)
+
+        total_gain = 10 ** (preset['volume'] / 20.0)
+        y_processed = y_eq * total_gain
+        
+        if np.any(np.isnan(y_processed)) or np.any(np.isinf(y_processed)):
+            return f"❌ Dữ liệu lỗi cho file: {file_name}"
+        
+        output_name = f"processed_{os.path.splitext(file_name)[0]}{os.path.splitext(audio_path)[1]}"
         output_path = os.path.join(output_dir, output_name)
-        audio.export(output_path, format="wav")
-        return f"✅ {file_name} → {output_name} ({category})"
+        sf.write(output_path, y_processed.T.astype(np.float32), sr)
+        
+        return f"✅ {file_name} → {output_name} ({preset['category_name']})"
+        
     except Exception as e:
-        return f"❌ Lỗi xử lý '{file_name}': {str(e)}"
+        return f"❌ Lỗi xử lý '{file_name}': {e}"
 
-def get_audio_files_from_folder(folder_path):
-    """Lấy tất cả file âm thanh từ folder"""
-    audio_extensions = ['*.wav', '*.mp3', '*.flac', '*.ogg', '*.m4a', '*.aac']
-    audio_files = []
-    
-    for ext in audio_extensions:
-        pattern = os.path.join(folder_path, '**', ext)
-        audio_files.extend(glob.glob(pattern, recursive=True))
-    
-    return audio_files
+def batch_process(folder_path, dest_folder, csv_path, log_func, algorithm):
+    try:
+        presets = load_presets_from_csv(csv_path)
+        log_func(f"Tải thành công {len(presets)} quy tắc từ {os.path.basename(csv_path)}")
+    except Exception as e:
+        log_func(f"❌ Lỗi nghiêm trọng: Không thể tải file cấu hình.\n{e}")
+        messagebox.showerror("Lỗi file cấu hình", f"Không thể đọc file CSV:\n{e}")
+        return
 
-def process_folder(folder_path, output_folder=None):
-    """Xử lý toàn bộ folder âm thanh"""
-    if not folder_path:
-        return "Chưa chọn folder nào!", "", None, ""
-    
-    # Lấy tất cả file âm thanh trong folder
-    audio_files = get_audio_files_from_folder(folder_path)
-    
+    audio_files = [os.path.join(r, f) for r, _, fs in os.walk(folder_path) for f in fs if f.lower().endswith(('.wav', '.mp3', '.flac', '.ogg'))]
     if not audio_files:
-        return "Không tìm thấy file âm thanh nào trong folder!", "", None, ""
+        log_func("Không tìm thấy file âm thanh nào trong folder!")
+        return
     
-    # Tạo thư mục SoundFix
-    soundfix_dir = Path("SoundFix")
-    soundfix_dir.mkdir(exist_ok=True)
+    output_dir = Path(dest_folder) / f"SoundFix_{Path(folder_path).name}_{datetime.datetime.now():%Y%m%d_%H%M%S}"
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Tạo thư mục con với tên folder gốc + timestamp
-    import datetime
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    folder_name = os.path.basename(folder_path)
-    output_dir = soundfix_dir / f"{folder_name}_processed_{timestamp}"
-    output_dir.mkdir(exist_ok=True)
+    log_func(f"Bắt đầu xử lý {len(audio_files)} file...\nThư mục output: {output_dir}")
     
-    results = []
-    total_files = len(audio_files)
-    
+    counts = {'success': 0, 'skipped': 0, 'error': 0}
     for i, file_path in enumerate(audio_files):
-        # Cập nhật progress
-        progress = (i + 1) / total_files * 100
-        result = process_audio_file(file_path, output_dir)
-        results.append(f"[{i+1}/{total_files}] {result}")
+        preset = get_preset_for_file(os.path.basename(file_path), presets)
+        msg = process_audio_file(file_path, output_dir, algorithm, preset)
+        log_func(f"[{i+1}/{len(audio_files)}] {msg}")
         
-        # Yield để cập nhật UI real-time
-        yield f"Đang xử lý... {progress:.1f}% ({i+1}/{total_files})", "\n".join(results), None, ""
+        if "✅" in msg: counts['success'] += 1
+        elif "🟡" in msg: counts['skipped'] += 1
+        else: counts['error'] += 1
     
-    # Tạo file ZIP chứa tất cả kết quả
-    zip_name = f"SoundFix_{folder_name}_{timestamp}.zip"
-    zip_path = output_dir.parent / zip_name
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for file_path in output_dir.rglob("*"):
-            if file_path.is_file():
-                zipf.write(file_path, file_path.name)
-    
-    # Copy file ZIP vào thư mục đích nếu được chọn
-    final_message = f"✅ Hoàn thành! Đã xử lý {total_files} file từ folder '{folder_name}'.\n📁 Kết quả được lưu tại: {output_dir}\n📦 File ZIP: {zip_path}"
-    
-    if output_folder:
-        try:
-            dest_zip_path = Path(output_folder) / zip_name
-            shutil.copy2(zip_path, dest_zip_path)
-            final_message += f"\n📂 Đã copy file ZIP vào: {dest_zip_path}"
-        except Exception as e:
-            final_message += f"\n⚠️ Không thể copy file ZIP: {str(e)}"
-    
-    yield f"Hoàn thành 100% ({total_files}/{total_files})", "\n".join(results), str(zip_path), final_message
+    log_func(f"\n📊 Thống kê:\n✅ Thành công: {counts['success']} file\n🟡 Bỏ qua: {counts['skipped']} file\n❌ Lỗi: {counts['error']} file")
+    messagebox.showinfo("Xong!", f"Đã xử lý xong!\n✅ Thành công: {counts['success']}\n🟡 Bỏ qua: {counts['skipped']}\n❌ Lỗi: {counts['error']}\n📁 Output: {output_dir}")
 
-def process_batch_files(files, output_folder=None):
-    """Xử lý hàng loạt nhiều file âm thanh (giữ lại cho tương thích)"""
-    if not files:
-        return "Chưa chọn file nào!", "", None, ""
-    
-    # Tạo thư mục SoundFix
-    soundfix_dir = Path("SoundFix")
-    soundfix_dir.mkdir(exist_ok=True)
-    
-    # Tạo thư mục con với timestamp
-    import datetime
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = soundfix_dir / f"processed_{timestamp}"
-    output_dir.mkdir(exist_ok=True)
-    
-    results = []
-    total_files = len(files)
-    
-    for i, file_path in enumerate(files):
-        # Cập nhật progress
-        progress = (i + 1) / total_files * 100
-        result = process_audio_file(file_path, output_dir)
-        results.append(f"[{i+1}/{total_files}] {result}")
-        
-        # Yield để cập nhật UI real-time
-        yield f"Đang xử lý... {progress:.1f}% ({i+1}/{total_files})", "\n".join(results), None, ""
-    
-    # Tạo file ZIP chứa tất cả kết quả
-    zip_path = output_dir.parent / f"SoundFix_Results_{timestamp}.zip"
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for file_path in output_dir.rglob("*"):
-            if file_path.is_file():
-                zipf.write(file_path, file_path.name)
-    
-    final_message = f"✅ Hoàn thành! Đã xử lý {total_files} file.\n📁 Kết quả được lưu tại: {output_dir}\n📦 File ZIP: {zip_path}"
-    
-    if output_folder:
-        try:
-            dest_zip_path = Path(output_folder) / f"SoundFix_Results_{timestamp}.zip"
-            shutil.copy2(zip_path, dest_zip_path)
-            final_message += f"\n📂 Đã copy file ZIP vào: {dest_zip_path}"
-        except Exception as e:
-            final_message += f"\n⚠️ Không thể copy file ZIP: {str(e)}"
-    
-    yield f"Hoàn thành 100% ({total_files}/{total_files})", "\n".join(results), str(zip_path), final_message
+# ==============================================================================
+# GIAO DIỆN NGƯỜI DÙNG
+# ==============================================================================
+def run_app():
+    # Sử dụng root của TkinterDnD nếu có, ngược lại dùng tk.Tk bình thường
+    root = TkinterDnD.Tk() if DND_SUPPORT else tk.Tk()
+    root.title("SoundFix Pro - Cấu hình bằng CSV (Hỗ trợ Kéo-Thả)")
+    root.geometry("750x600")
 
-def create_demo():
-    with gr.Blocks(title="SoundFix - Bộ xử lý âm thanh tự động") as demo:
-        gr.Markdown("""
-        # 🎵 SoundFix - Bộ xử lý âm thanh tự động cho Game
-        
-        ### 🚀 Cách sử dụng đơn giản:
-        1. **Chọn folder chứa âm thanh** (bước duy nhất cần làm thủ công)
-        2. **Chọn thư mục đích** để lưu file ZIP (tùy chọn)
-        3. **Nhấn "Xử lý folder"** - ứng dụng sẽ tự động:
-           - Tìm tất cả file âm thanh trong folder
-           - Phân loại và xử lý theo preset
-           - Tạo file ZIP kết quả
-           - Copy file ZIP vào thư mục đích (nếu chọn)
-        4. **Tải file ZIP** chứa tất cả kết quả đã xử lý
-        
-        ### 📁 Hỗ trợ định dạng:
-        - WAV, MP3, FLAC, OGG, M4A, AAC
-        
-        ### 🎛️ Preset tự động:
-        - `Footstep_*` → Preset Footstep
-        - `Impact_*`, `Attack_*` → Preset Attack/Impact  
-        - `UI_Click_*`, `UI_SFX_*` → Preset UI SFX
-        - `Voice_*`, `Dialog_*` → Preset Voice/Dialog
-        - `Ambient_*` → Preset Ambient
-        - `Env_*` → Preset Environment Tone
-        - `Music_*` → Preset Music Background
-        """)
-        
-        with gr.Tab("📁 Xử lý Folder (Khuyến nghị)"):
-            with gr.Row():
-                with gr.Column(scale=2):
-                    folder_input = gr.File(
-                        label="📁 Chọn folder chứa âm thanh (kéo thả hoặc click để chọn)",
-                        file_count="directory",
-                        file_types=["audio"]
-                    )
-                    
-                    output_folder_input = gr.File(
-                        label="📂 Chọn thư mục đích để lưu file ZIP (tùy chọn)",
-                        file_count="directory"
-                    )
-                    
-                    process_folder_btn = gr.Button(
-                        "🚀 Xử lý toàn bộ folder", 
-                        variant="primary",
-                        size="lg"
-                    )
-                    
-                    progress_text = gr.Textbox(
-                        label="📊 Tiến trình",
-                        value="Sẵn sàng xử lý...",
-                        interactive=False
-                    )
-                
-                with gr.Column(scale=1):
-                    download_btn = gr.File(
-                        label="📦 Tải file ZIP kết quả",
-                        visible=False
-                    )
-            
-            output_text = gr.Textbox(
-                label="📋 Kết quả xử lý",
-                lines=15,
-                max_lines=20,
-                interactive=False
-            )
-            
-            final_message_text = gr.Textbox(
-                label="📢 Thông báo cuối",
-                lines=3,
-                interactive=False
-            )
-            
-            # Xử lý sự kiện folder
-            def on_process_folder(folder, output_folder):
-                if not folder:
-                    return "Chưa chọn folder nào!", "", None, ""
-                return process_folder(folder, output_folder)
-            
-            process_folder_btn.click(
-                on_process_folder,
-                inputs=[folder_input, output_folder_input],
-                outputs=[progress_text, output_text, download_btn, final_message_text],
-                show_progress=True
-            )
-        
-        with gr.Tab("📄 Xử lý File riêng lẻ"):
-            with gr.Row():
-                with gr.Column(scale=2):
-                    file_input = gr.File(
-                        label="📄 Chọn file âm thanh (có thể chọn nhiều file)",
-                        file_count="multiple",
-                        file_types=["audio"]
-                    )
-                    
-                    output_folder_input_2 = gr.File(
-                        label="📂 Chọn thư mục đích để lưu file ZIP (tùy chọn)",
-                        file_count="directory"
-                    )
-                    
-                    process_btn = gr.Button(
-                        "🚀 Xử lý file", 
-                        variant="secondary",
-                        size="lg"
-                    )
-                    
-                    progress_text_2 = gr.Textbox(
-                        label="📊 Tiến trình",
-                        value="Sẵn sàng xử lý...",
-                        interactive=False
-                    )
-                
-                with gr.Column(scale=1):
-                    download_btn_2 = gr.File(
-                        label="📦 Tải file ZIP kết quả",
-                        visible=False
-                    )
-            
-            output_text_2 = gr.Textbox(
-                label="📋 Kết quả xử lý",
-                lines=15,
-                max_lines=20,
-                interactive=False
-            )
-            
-            final_message_text_2 = gr.Textbox(
-                label="📢 Thông báo cuối",
-                lines=3,
-                interactive=False
-            )
-            
-            # Xử lý sự kiện file
-            def on_process_files(files, output_folder):
-                if not files:
-                    return "Chưa chọn file nào!", "", None, ""
-                return process_batch_files(files, output_folder)
-            
-            process_btn.click(
-                on_process_files,
-                inputs=[file_input, output_folder_input_2],
-                outputs=[progress_text_2, output_text_2, download_btn_2, final_message_text_2],
-                show_progress=True
-            )
-        
-        # Thêm footer
-        gr.Markdown("""
-        ---
-        **💡 Lưu ý:** 
-        - File output sẽ có prefix `processed_`
-        - Kết quả được lưu trong folder `SoundFix/[tên_folder]_processed_[timestamp]/`
-        - Hỗ trợ file âm thanh stereo và mono
-        - Tự động tạo file ZIP để dễ dàng tải về
-        - **Nếu chọn thư mục đích, file ZIP sẽ được copy tự động vào đó**
-        - **Khuyến nghị sử dụng tab "Xử lý Folder" để tự động hóa hoàn toàn**
-        """)
+    # --- Các biến lưu trữ ---
+    folder_var = tk.StringVar()
+    dest_var = tk.StringVar()
+    csv_path_var = tk.StringVar()
+    algorithm_var = tk.StringVar()
     
-    return demo
+    # --- CÁC HÀM TRỢ GIÚP GIAO DIỆN ---
+    def show_config_preview(csv_path):
+        if not csv_path or not os.path.exists(csv_path):
+            return
+        
+        try:
+            presets = load_presets_from_csv(csv_path)
+        except Exception as e:
+            messagebox.showerror("Lỗi đọc CSV", f"Không thể phân tích file cấu hình:\n{e}")
+            return
+            
+        preview_win = tk.Toplevel(root)
+        preview_win.title(f"Xem trước cấu hình - {os.path.basename(csv_path)}")
+        preview_win.geometry("800x400")
+        
+        cols = list(presets[0].keys())
+        tree = ttk.Treeview(preview_win, columns=cols, show='headings')
+        
+        for col in cols:
+            tree.heading(col, text=col.replace('_', ' ').title())
+            tree.column(col, width=100, anchor='center')
+        
+        for preset in presets:
+            # Chuyển đổi list keywords thành string để hiển thị
+            preset_display = preset.copy()
+            preset_display['keywords'] = ', '.join(preset_display['keywords'])
+            tree.insert("", "end", values=list(preset_display.values()))
+            
+        vsb = ttk.Scrollbar(preview_win, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side='right', fill='y')
+        tree.pack(fill='both', expand=True)
+        preview_win.grab_set() # Giữ focus ở cửa sổ này
+
+    def setup_drag_and_drop(widget, string_var, is_csv=False):
+        if not DND_SUPPORT: return
+
+        def on_drop(event):
+            # Làm sạch đường dẫn nhận được từ event
+            path = event.data.strip()
+            if path.startswith('{') and path.endswith('}'):
+                path = path[1:-1]
+            string_var.set(path)
+            if is_csv:
+                show_config_preview(path)
+
+        widget.drop_target_register(DND_FILES)
+        widget.dnd_bind('<<Drop>>', on_drop)
+        
+    def select_csv_and_show():
+        path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+        if path:
+            csv_path_var.set(path)
+            show_config_preview(path)
+
+    def create_template_csv():
+        # (hàm này giữ nguyên như trước)
+        save_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")], initialfile="sound_presets.csv", title="Lưu file cấu hình mẫu")
+        if not save_path: return
+        header = "priority,category_name,keywords,lowcut,highcut,volume,attenuation_db,gate_threshold_db,expansion_ratio"
+        data = ["10,UI SFX,\"ui_click,ui_sfx,ui,click\",200,6000,0,-80,-50,0.1", "20,Footstep,\"footstep,step\",100,5000,-2,-80,-50,0.1", "30,Attack/Impact,\"impact,attack,hit,metal,wood,glass\",150,7000,-2,-80,-50,0.1", "40,Voice/Dialog,\"voice,dialog,speech\",150,8000,0,-80,-60,0.05", "50,Ambient,\"ambient,rain,water,drip,wind,air\",80,8000,-8,-70,-50,0.1", "60,Environment Tone,\"env,environment,rattle,window,door,creak\",60,6000,-14,-70,-50,0.1", "70,Music Background,music,100,12000,-8,-80,-50,0.1"]
+        with open(save_path, 'w', newline='', encoding='utf-8') as f:
+            f.write(header + '\n' + '\n'.join(data))
+        messagebox.showinfo("Thành công", f"Đã tạo file mẫu tại:\n{save_path}")
+        csv_path_var.set(save_path)
+        show_config_preview(save_path)
+
+    # --- BỐ CỤC GIAO DIỆN ---
+    main_frame = tk.Frame(root, padx=10, pady=10)
+    main_frame.pack(fill='both', expand=True)
+
+    if not DND_SUPPORT:
+        tk.Label(main_frame, text="Lưu ý: Để bật kéo-thả, hãy cài đặt thư viện 'tkinterdnd2' (pip install tkinterdnd2)", fg="orange").pack(anchor='w')
+
+    # Các ô nhập liệu
+    tk.Label(main_frame, text="1. Folder âm thanh gốc:").pack(anchor='w')
+    frame1 = tk.Frame(main_frame)
+    frame1.pack(fill='x', pady=(2, 10))
+    entry1 = tk.Entry(frame1, textvariable=folder_var)
+    entry1.pack(side='left', expand=True, fill='x')
+    tk.Button(frame1, text="Chọn...", command=lambda: folder_var.set(filedialog.askdirectory(title="Chọn folder âm thanh gốc"))).pack(side='left', padx=(5,0))
+    setup_drag_and_drop(entry1, folder_var)
+    
+    tk.Label(main_frame, text="2. Thư mục đích:").pack(anchor='w')
+    frame2 = tk.Frame(main_frame)
+    frame2.pack(fill='x', pady=(2, 10))
+    entry2 = tk.Entry(frame2, textvariable=dest_var)
+    entry2.pack(side='left', expand=True, fill='x')
+    tk.Button(frame2, text="Chọn...", command=lambda: dest_var.set(filedialog.askdirectory(title="Chọn thư mục đích"))).pack(side='left', padx=(5,0))
+    setup_drag_and_drop(entry2, dest_var)
+
+    tk.Label(main_frame, text="3. File cấu hình (.csv):").pack(anchor='w')
+    frame3 = tk.Frame(main_frame)
+    frame3.pack(fill='x', pady=(2, 0))
+    entry3 = tk.Entry(frame3, textvariable=csv_path_var)
+    entry3.pack(side='left', expand=True, fill='x')
+    tk.Button(frame3, text="Chọn...", command=select_csv_and_show).pack(side='left', padx=(5,0))
+    tk.Button(main_frame, text="Tạo file cấu hình mẫu...", command=create_template_csv).pack(anchor='e', pady=(2, 10))
+    setup_drag_and_drop(entry3, csv_path_var, is_csv=True)
+    
+    tk.Label(main_frame, text="4. Engine xử lý:", font=('Arial', 10, 'bold')).pack(anchor='w')
+    ttk.Combobox(main_frame, textvariable=algorithm_var, values=["Dynamic Hybrid Brickwall", "Hybrid Brickwall", "Butterworth Filter"], state="readonly").pack(fill='x', pady=(2, 15))
+    algorithm_var.set("Dynamic Hybrid Brickwall")
+    
+    # Nút xử lý
+    log_box = None
+    def start_process():
+        if not all([folder_var.get(), dest_var.get(), csv_path_var.get(), algorithm_var.get()]):
+            messagebox.showerror("Lỗi", "Vui lòng điền đầy đủ tất cả các mục!")
+            return
+        if log_box: log_box.delete(1.0, tk.END)
+        threading.Thread(target=batch_process, args=(folder_var.get(), dest_var.get(), csv_path_var.get(), log, algorithm_var.get()), daemon=True).start()
+    tk.Button(main_frame, text="5. BẮT ĐẦU XỬ LÝ", command=start_process, bg='#007acc', fg='white', font=('Arial', 12, 'bold'), height=2).pack(fill='x', pady=10)
+    
+    # Log box
+    log_box = scrolledtext.ScrolledText(main_frame, height=10, font=('Consolas', 10), bg="#2d2d2d", fg="#dcdcdc", wrap=tk.WORD)
+    log_box.pack(fill='both', expand=True)
+    
+    def log(msg):
+        if root.winfo_exists() and log_box:
+            log_box.insert(tk.END, msg + "\n")
+            log_box.see(tk.END)
+
+    root.mainloop()
 
 if __name__ == "__main__":
-    demo = create_demo()
-    demo.launch(
-        server_name="127.0.0.1",
-        share=False,
-        show_error=True
-    )
+    run_app()

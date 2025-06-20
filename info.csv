@@ -1,0 +1,8 @@
+priority,category_name,keywords,lowcut,highcut,volume,attenuation_db,gate_threshold_db,expansion_ratio
+10,UI SFX,"ui_click,ui_sfx,ui,click",200,6000,0,-80,-50,0.1
+20,Footstep,"footstep,step",100,5000,-2,-80,-50,0.1
+30,Attack/Impact,"impact,attack,hit,metal,wood,glass",150,7000,-2,-80,-50,0.1
+40,Voice/Dialog,"voice,dialog,speech",150,8000,0,-80,-60,0.05
+50,Ambient,"ambient,rain,water,drip,wind,air",80,8000,-8,-70,-50,0.1
+60,Environment Tone,"env,environment,rattle,window,door,creak",60,6000,-14,-70,-50,0.1
+70,Music Background,music,100,12000,-8,-80,-50,0.1
