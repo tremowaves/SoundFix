@@ -25,27 +25,28 @@ def get_category(file_name):
     if "metal" in fname or "wood" in fname or "glass" in fname: return 'Attack/Impact'
     return None
 
-# ==============================================================================
-# PRESETS ĐÃ CẬP NHẬT VỚI LOGIC MỚI
-# 'attenuation_db': Độ suy giảm (bằng dB) cho các tần số bên ngoài dải mong muốn.
-# ==============================================================================
 PRESETS = {
-    'UI SFX':     {'lowcut': 200, 'highcut': 6000,  'volume': 0,   'attenuation_db': -60},
-    'Footstep':   {'lowcut': 100, 'highcut': 5000,  'volume': -2,  'attenuation_db': -60},
-    'Attack/Impact': {'lowcut': 150, 'highcut': 7000,  'volume': -2,  'attenuation_db': -60},
-    'Voice/Dialog':  {'lowcut': 150, 'highcut': 8000, 'volume': 0,   'attenuation_db': -60},
-    'Ambient':    {'lowcut': 80,  'highcut': 8000, 'volume': -8,  'attenuation_db': -50},
-    'Environment Tone': {'lowcut': 60,  'highcut': 6000, 'volume': -14, 'attenuation_db': -50},
-    'Music Background': {'lowcut': 100, 'highcut': 12000, 'volume': -8,  'attenuation_db': -60}
+    'UI SFX':     {'lowcut': 200, 'highcut': 6000,  'volume': 0,   'attenuation_db': -80},
+    'Footstep':   {'lowcut': 100, 'highcut': 5000,  'volume': -2,  'attenuation_db': -80},
+    'Attack/Impact': {'lowcut': 150, 'highcut': 7000,  'volume': -2,  'attenuation_db': -80},
+    'Voice/Dialog':  {'lowcut': 150, 'highcut': 8000, 'volume': 0,   'attenuation_db': -80},
+    'Ambient':    {'lowcut': 80,  'highcut': 8000, 'volume': -8,  'attenuation_db': -70},
+    'Environment Tone': {'lowcut': 60,  'highcut': 6000, 'volume': -14, 'attenuation_db': -70},
+    'Music Background': {'lowcut': 100, 'highcut': 12000, 'volume': -8,  'attenuation_db': -80}
 }
 
-# ------------------------------------------------------------------------------
-# HÀM LỌC HELPER (GIỮ NGUYÊN)
-# ------------------------------------------------------------------------------
-def butter_bandpass_filter(data, lowcut, highcut, sr, order=8):
+# ==============================================================================
+# THAY ĐỔI CHÍNH Ở ĐÂY: TĂNG BẬC CỦA BỘ LỌC
+# ==============================================================================
+def butter_bandpass_filter(data, lowcut, highcut, sr, order=20): # <-- Tăng bậc từ 8 lên 20
+    """
+    Hàm lọc Butterworth với bậc cao hơn để tạo ra độ dốc gắt hơn.
+    """
     nyq = 0.5 * sr
     low = lowcut / nyq
     high = highcut / nyq
+    
+    # Thiết kế bộ lọc SOS để đảm bảo sự ổn định với bậc cao
     sos = butter(order, [low, high], analog=False, btype='band', output='sos')
     
     if len(data.shape) > 1:
@@ -57,19 +58,15 @@ def butter_bandpass_filter(data, lowcut, highcut, sr, order=8):
         filtered = sosfilt(sos, data)
         return filtered
 
-# ==============================================================================
-# HÀM LỌC HYBRID MỚI - TRÁI TIM CỦA LOGIC MỚI
-# ==============================================================================
-def hybrid_brickwall_filter(data, lowcut, highcut, sr, attenuation_db=-60):
+def hybrid_brickwall_filter(data, lowcut, highcut, sr, attenuation_db=-120):
     """
-    Tạo hiệu ứng 'brickwall' bằng cách tách tín hiệu thành pass-band và stop-band,
-    sau đó giảm gain của stop-band và tái tổ hợp chúng.
+    Tạo hiệu ứng 'brickwall' bằng phương pháp multi-band gain.
+    Sử dụng bộ lọc bậc cao để có vách cắt sắc nét.
     """
-    # 1. Tách tín hiệu Pass-band (dải tần muốn giữ lại)
-    # Sử dụng order cao hơn (ví dụ: 8) để tách bạch hơn
-    y_pass = butter_bandpass_filter(data, lowcut, highcut, sr, order=8)
+    # 1. Tách tín hiệu Pass-band (dải tần muốn giữ lại) với bộ lọc bậc cao
+    y_pass = butter_bandpass_filter(data, lowcut, highcut, sr) # Hàm này giờ đã có bậc cao
     
-    # 2. Tạo tín hiệu Stop-band (phần còn lại) bằng cách lấy gốc trừ đi pass-band
+    # 2. Tạo tín hiệu Stop-band (phần còn lại)
     y_stop = data - y_pass
     
     # 3. Tính toán hệ số gain để giảm âm cho stop-band
@@ -78,14 +75,11 @@ def hybrid_brickwall_filter(data, lowcut, highcut, sr, attenuation_db=-60):
     # 4. Giảm âm stop-band
     y_stop_attenuated = y_stop * reduction_gain
     
-    # 5. Tái tổ hợp tín hiệu: Pass-band + Stop-band đã giảm âm
+    # 5. Tái tổ hợp tín hiệu
     y_hybrid = y_pass + y_stop_attenuated
     
     return y_hybrid
 
-# ==============================================================================
-# HÀM XỬ LÝ ÂM THANH ĐÃ ĐƯỢC CẬP NHẬT
-# ==============================================================================
 def process_audio_file(audio_path, output_dir):
     file_name = os.path.basename(audio_path)
     category = get_category(file_name)
@@ -106,21 +100,15 @@ def process_audio_file(audio_path, output_dir):
             try:
                 data, sr = sf.read(audio_path)
                 y = data.T
-                if len(y.shape) == 1:
-                    y = y.reshape(1, -1)
+                if len(y.shape) == 1: y = y.reshape(1, -1)
             except Exception as sf_error:
                 return f"❌ Không thể đọc file âm thanh '{file_name}': {str(sf_error)}"
         
         print(f"   - Sample rate: {sr}Hz, Channels: {y.shape[0] if len(y.shape) > 1 else 1}")
         
-        # --- THAY ĐỔI QUAN TRỌNG Ở ĐÂY ---
-        # Áp dụng bộ lọc Hybrid mới
         y_eq = hybrid_brickwall_filter(y, preset['lowcut'], preset['highcut'], sr, preset['attenuation_db'])
-
-        # Áp dụng gain tổng thể
         total_gain = 10 ** (preset['volume'] / 20)
         y_processed = y_eq * total_gain
-        # ---------------------------------
         
         if np.any(np.isnan(y_processed)) or np.any(np.isinf(y_processed)):
             return f"❌ Dữ liệu âm thanh lỗi (NaN/Inf) cho file: {file_name}"
@@ -140,7 +128,7 @@ def process_audio_file(audio_path, output_dir):
         return f"❌ Lỗi xử lý '{file_name}': {str(e)}"
 
 # ==============================================================================
-# CÁC HÀM GIAO DIỆN VÀ XỬ LÝ HÀNG LOẠT (GIỮ NGUYÊN)
+# CÁC HÀM GIAO DIỆN VÀ XỬ LÝ HÀNG LOẠT (KHÔNG THAY ĐỔI)
 # ==============================================================================
 def get_audio_files_from_folder(folder_path):
     audio_extensions = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac']
