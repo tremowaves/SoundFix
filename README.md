@@ -6,8 +6,8 @@ SoundFix is a desktop application that automatically processes audio files for g
 ## ✨ Main Features
 - 🎯 **Automatic sound type detection** based on filename keywords
 - 🎛️ **7 professional EQ presets** for different sound categories
-- 🔊 **Advanced audio processing** with brickwall bandpass filter (FFT/STFT)
-- 📦 **Automatic ZIP export** with timestamp
+- 🔊 **Advanced audio processing** with Butterworth bandpass filter
+- 📁 **Individual file export** with timestamped output directory
 - 🖥️ **User-friendly desktop interface** (Tkinter)
 - 📊 **Detailed processing log and statistics**
 
@@ -26,27 +26,169 @@ SoundFix is a desktop application that automatically processes audio files for g
 ## 🚀 Installation
 
 ### System Requirements
-- Python 3.8+
+- Python 3.12+
 - FFmpeg (installed and in PATH)
 - Windows 10/11
+- Git (for cloning repository)
+- Conda or Miniconda (for environment management)
 
-### Install dependencies
+### Option 1: Using Conda (Recommended)
+
+#### Step 1: Clone the repository
 ```bash
-pip install -r requirements.txt
+# Clone the repository from GitHub
+git clone https://github.com/tremowaves/sfx_mixing.git
+
+# Navigate to the project directory
+cd sfx_mixing
 ```
 
-### FFmpeg Installation
-1. Download FFmpeg: https://ffmpeg.org/download.html
-2. Add FFmpeg to your Windows PATH
-3. Check installation: `ffmpeg -version`
+#### Step 2: Create and activate conda environment
+```bash
+# Create conda environment from environment.yml
+conda env create -f environment.yml
+
+# Activate the environment
+conda activate sfx_mixing
+
+# Verify Python version
+python --version
+```
+
+#### Step 3: Install FFmpeg (if not already installed)
+```bash
+# Download FFmpeg from official website
+# https://ffmpeg.org/download.html
+
+# Or install via conda (alternative)
+conda install -c conda-forge ffmpeg
+
+# Verify FFmpeg installation
+ffmpeg -version
+```
+
+#### Step 4: Run the application
+```bash
+# Start the desktop application
+python soundfix_desktop.py
+```
+
+### Option 2: Using pip
+
+#### Step 1: Clone the repository
+```bash
+# Clone the repository from GitHub
+git clone https://github.com/tremowaves/sfx_mixing.git
+
+# Navigate to the project directory
+cd sfx_mixing
+```
+
+#### Step 2: Create virtual environment (optional but recommended)
+```bash
+# Create virtual environment
+python -m venv sfx_mixing_env
+
+# Activate virtual environment
+# On Windows:
+sfx_mixing_env\Scripts\activate
+# On macOS/Linux:
+source sfx_mixing_env/bin/activate
+```
+
+#### Step 3: Install dependencies
+```bash
+# Install all required packages
+pip install -r requirements.txt
+
+# Verify installation
+python -c "import librosa, soundfile, numpy, scipy; print('All packages installed successfully!')"
+```
+
+#### Step 4: Install FFmpeg
+```bash
+# Download FFmpeg from official website
+# https://ffmpeg.org/download.html
+
+# Add FFmpeg to your system PATH
+# Verify installation
+ffmpeg -version
+```
+
+#### Step 5: Run the application
+```bash
+# Start the desktop application
+python soundfix_desktop.py
+```
+
+### Environment Management
+
+#### Update existing conda environment
+```bash
+# If you need to update the environment later
+conda env update -f environment.yml
+```
+
+#### Remove conda environment
+```bash
+# To remove the environment if needed
+conda deactivate
+conda env remove -n sfx_mixing
+```
+
+#### Check installed packages
+```bash
+# List all installed packages in the environment
+conda list
+
+# Or with pip
+pip list
+```
+
+### Troubleshooting Installation
+
+#### Common Issues:
+1. **Conda environment creation fails**
+   ```bash
+   # Try updating conda first
+   conda update conda
+   
+   # Then create environment
+   conda env create -f environment.yml
+   ```
+
+2. **FFmpeg not found**
+   ```bash
+   # Make sure FFmpeg is in your PATH
+   # Or install via conda
+   conda install -c conda-forge ffmpeg
+   ```
+
+3. **Package conflicts**
+   ```bash
+   # Clean environment and recreate
+   conda env remove -n sfx_mixing
+   conda env create -f environment.yml
+   ```
+
+4. **Python version issues**
+   ```bash
+   # Ensure you're using Python 3.12
+   python --version
+   
+   # If not, update the environment.yml file
+   ```
 
 ## 📁 Project Structure
 ```
-Sound Fix/
-├── soundfix_desktop.py    # Main application
+sfx_mixing/
+├── soundfix_desktop.py    # Main desktop application
+├── soundfix.py            # Command-line version
 ├── test_filter.py         # Filter test script
+├── environment.yml        # Conda environment file
+├── requirements.txt       # pip dependencies
 ├── README.md              # This guide
-└── requirements.txt       # Dependencies
+└── LICENSE                # MIT License
 ```
 
 ## 🎮 Usage
@@ -61,12 +203,12 @@ python soundfix_desktop.py
 - Supported formats: WAV, MP3, FLAC, OGG, M4A, AAC
 
 ### 3. Select the output folder
-- Click "Browse..." to select where the ZIP file will be saved
+- Click "Browse..." to select where the processed files will be saved
 
-### 4. Process and export ZIP
-- Click "Process and Export ZIP" to start
+### 4. Process and export files
+- Click "Process and Export File" to start
 - Monitor progress in the log
-- The ZIP file will be created automatically with a timestamp
+- Processed files will be saved in a timestamped directory
 
 ## 🎯 Filename Keyword Rules
 
@@ -117,7 +259,7 @@ python test_filter.py
 ```
 This script will:
 - Generate a test signal with multiple frequencies
-- Apply the brickwall bandpass filter
+- Apply the Butterworth bandpass filter
 - Show filter response plots
 - Save test audio files for listening
 
@@ -136,7 +278,7 @@ The app prints detailed info in the console:
 After processing, the app shows:
 - ✅ Number of successful files
 - ❌ Number of errors
-- 📦 ZIP file path
+- 📁 Output directory path
 
 ## 🐛 Troubleshooting
 
@@ -150,10 +292,21 @@ After processing, the app shows:
 
 ### Missing dependencies
 ```bash
+# For conda users
+conda env update -f environment.yml
+
+# For pip users
 pip install -r requirements.txt
 ```
 
 ## 📝 Changelog
+
+### Version 2.0
+- Removed ZIP export functionality
+- Updated to Python 3.12
+- Added conda environment support
+- Improved Butterworth filter implementation
+- Enhanced error handling
 
 ### Version 1.1
 - Improved preset detection
@@ -180,4 +333,5 @@ MIT License - See LICENSE for details
 If you have issues, please open an issue on GitHub or contact via email.
 
 ---
+
 **SoundFix** - Make your game audio more professional! 🎮🎵 
