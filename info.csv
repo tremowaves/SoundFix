@@ -1,8 +1,14 @@
-priority,category_name,keywords,lowcut,highcut,volume,attenuation_db,gate_threshold_db,expansion_ratio
-10,UI SFX,"ui_click,ui_sfx,ui,click",200,6000,0,-80,-50,0.1
-20,Footstep,"footstep,step",100,5000,-2,-80,-50,0.1
-30,Attack/Impact,"impact,attack,hit,metal,wood,glass",150,7000,-2,-80,-50,0.1
-40,Voice/Dialog,"voice,dialog,speech",150,8000,0,-80,-60,0.05
-50,Ambient,"ambient,rain,water,drip,wind,air",80,8000,-8,-70,-50,0.1
-60,Environment Tone,"env,environment,rattle,window,door,creak",60,6000,-14,-70,-50,0.1
-70,Music Background,music,100,12000,-8,-80,-50,0.1
+priority,keywords,category_name,lowcut,highcut,volume,attenuation_db,gate_threshold_db,expansion_ratio,mb_low_thresh,mb_low_ratio,mb_mid_thresh,mb_mid_ratio,mb_high_thresh,mb_high_ratio
+10,"ui_click,ui_sfx,ui,click",UI SFX,200,6000,0,-80,-50,0.1,-6,4,-4,3,-2,2
+12,"dice,chip,card,token,piece,tile,board",Board Piece,150,6000,-2,-80,-50,0.1,-6,4,-4,3,-2,2
+13,"card,draw,place,flip,shuffle,deal,discard",Card Action,150,7000,-2,-80,-50,0.1,-6,4,-4,3,-2,2
+14,"token,marker,move,place,collect",Token/Marker,150,6000,-2,-80,-50,0.1,-6,4,-4,3,-2,2
+15,"dice,roll,shake,throw",Dice,120,7000,-2,-80,-50,0.1,-6,4,-4,3,-2,2
+16,"selection,highlight,confirm,cancel,turn,notify",Board UI Feedback,200,6500,0,-80,-50,0.1,-6,4,-4,3,-2,2
+20,"footstep,step",Footstep,100,5000,-2,-80,-50,0.1,-8,4,-6,3,-4,2
+30,"impact,attack,hit,metal,wood,glass",Attack/Impact,150,7000,-2,-80,-50,0.1,-4,4,-3,3,-2,2
+35,"weapon,gun,rifle,shot,fire",Weapon,150,7000,-2,-80,-50,0.1,-4,4,-2,4,-1,3
+40,"voice,dialog,speech",Voice/Dialog,150,8000,0,-80,-60,0.05,-6,3,-4,3,-3,2
+50,"ambient,rain,water,drip,wind,air",Ambient,80,8000,-8,-70,-50,0.1,-10,2,-8,2,-6,2
+60,"env,environment,rattle,window,door,creak",Environment Tone,60,6000,-14,-70,-50,0.1,-12,2,-10,2,-8,2
+70,"music",Music Background,100,12000,-8,-80,-50,0.1,-8,3,-4,3,-2,2
